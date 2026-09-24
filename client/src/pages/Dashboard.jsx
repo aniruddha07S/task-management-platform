@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
+import toast from 'react-hot-toast';
 import { logout } from '../store/authSlice';
 import { fetchTasks, createTask, updateTask, deleteTask, setFilters } from '../store/tasksSlice';
 import TaskCard from '../components/TaskCard';
@@ -47,7 +48,10 @@ const Dashboard = () => {
   const handleDelete = useCallback(
     (id) => {
       if (window.confirm('Delete this task?')) {
-        dispatch(deleteTask(id));
+        dispatch(deleteTask(id))
+          .unwrap()
+          .then(() => toast.success('Task deleted'))
+          .catch((msg) => toast.error(msg || 'Failed to delete task'));
       }
     },
     [dispatch]
@@ -56,9 +60,15 @@ const Dashboard = () => {
   const handleFormSubmit = useCallback(
     (formData) => {
       if (editingTask) {
-        dispatch(updateTask({ id: editingTask._id, taskData: formData }));
+        dispatch(updateTask({ id: editingTask._id, taskData: formData }))
+          .unwrap()
+          .then(() => toast.success('Task updated'))
+          .catch((msg) => toast.error(msg || 'Failed to update task'));
       } else {
-        dispatch(createTask(formData));
+        dispatch(createTask(formData))
+          .unwrap()
+          .then(() => toast.success('Task created'))
+          .catch((msg) => toast.error(msg || 'Failed to create task'));
       }
       setShowForm(false);
       setEditingTask(null);

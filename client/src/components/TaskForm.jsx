@@ -1,15 +1,26 @@
 import { useState, useEffect } from 'react';
+import { useSelector } from 'react-redux';
+import api from '../services/api';
 
 const TaskForm = ({ task, onSubmit, onClose }) => {
+  const currentUser = useSelector((state) => state.auth.user);
+  const [users, setUsers] = useState([]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     priority: 'Medium',
     dueDate: '',
     status: 'Pending',
-    assignedUser: '',
+    assignedUser: currentUser?.id || '',
   });
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    api
+      .get('/api/auth/users')
+      .then((res) => setUsers(res.data))
+      .catch(() => setUsers([]));
+  }, []);
 
   useEffect(() => {
     if (task) {
@@ -38,8 +49,8 @@ const TaskForm = ({ task, onSubmit, onClose }) => {
       setError('Due date is required');
       return;
     }
-    if (!formData.assignedUser.trim()) {
-      setError('Assigned user ID is required');
+    if (!formData.assignedUser) {
+      setError('Please assign the task to a user');
       return;
     }
     setError('');
@@ -101,14 +112,19 @@ const TaskForm = ({ task, onSubmit, onClose }) => {
             onChange={handleChange}
             className="border rounded px-3 py-2 outline-none focus:ring-2 focus:ring-blue-400"
           />
-          <input
-            type="text"
+          <select
             name="assignedUser"
-            placeholder="Assigned User ID"
             value={formData.assignedUser}
             onChange={handleChange}
-            className="border rounded px-3 py-2 outline-none focus:ring-2 focus:ring-blue-400"
-          />
+            className="border rounded px-3 py-2"
+          >
+            <option value="">Assign to...</option>
+            {users.map((u) => (
+              <option key={u._id} value={u._id}>
+                {u.name} ({u.email})
+              </option>
+            ))}
+          </select>
 
           <div className="flex gap-2 mt-2">
             <button
