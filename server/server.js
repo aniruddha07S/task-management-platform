@@ -38,9 +38,18 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Something went wrong on the server' });
 });
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error('MongoDB error:', err));
+// Retry the initial connection instead of giving up, so a temporary network /
+// Atlas access-list issue heals itself without a manual restart.
+const connectWithRetry = () => {
+  mongoose
+    .connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 10000 })
+    .then(() => console.log('MongoDB connected'))
+    .catch((err) => {
+      console.error('MongoDB connection failed, retrying in 5s:', err.message);
+      setTimeout(connectWithRetry, 5000);
+    });
+};
+connectWithRetry();
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
