@@ -3,6 +3,7 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const {
   getTasks,
+  getTaskStats,
   getTaskById,
   createTask,
   updateTask,
@@ -12,6 +13,7 @@ const {
 router.use(auth);
 
 router.get('/', getTasks);
+router.get('/stats', getTaskStats); // must be before '/:id'
 router.get('/:id', getTaskById);
 router.post('/', createTask);
 router.put('/:id', updateTask);

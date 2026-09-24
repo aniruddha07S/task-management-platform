@@ -1,0 +1,24 @@
+# Run the full stack locally:  docker compose up --build
+# Frontend → http://localhost:3000   Backend → http://localhost:5001
+# Requires server/.env with MONGO_URI and JWT_SECRET.
+services:
+  server:
+    build: ./server
+    env_file: ./server/.env
+    environment:
+      PORT: 5001
+      CLIENT_URL: http://localhost:3000
+    ports:
+      - "5001:5001"
+    restart: unless-stopped
+
+  client:
+    build:
+      context: ./client
+      args:
+        VITE_API_URL: http://localhost:5001
+    ports:
+      - "3000:80"
+    depends_on:
+      - server
+    restart: unless-stopped

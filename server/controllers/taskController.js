@@ -1,33 +1,81 @@
 const Task = require('../models/Task');
 
-// GET /api/tasks — supports ?search=&status=&priority=&sort=
+const STATUSES = ['Pending', 'In Progress', 'Completed'];
+const PRIORITIES = ['Low', 'Medium', 'High'];
+
+const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Builds the Mongo filter from query params. Returns { error } for invalid values.
+const buildFilter = ({ search, status, priority }, { includeStatus = true } = {}) => {
+  const filter = {};
+  if (search && search.trim()) {
+    filter.title = { $regex: escapeRegex(search.trim()), $options: 'i' };
+  }
+  if (priority) {
+    if (!PRIORITIES.includes(priority)) return { error: `Invalid priority "${priority}"` };
+    filter.priority = priority;
+  }
+  if (includeStatus && status) {
+    if (!STATUSES.includes(status)) return { error: `Invalid status "${status}"` };
+    filter.status = status;
+  }
+  return { filter };
+};
+
+// GET /api/tasks — ?search=&status=&priority=&sort=asc|desc&page=1&limit=9
 exports.getTasks = async (req, res) => {
   try {
-    const { search, status, priority, sort } = req.query;
-    const filter = {};
+    const { filter, error } = buildFilter(req.query);
+    if (error) return res.status(400).json({ message: error });
 
-    if (search) {
-      filter.title = { $regex: search, $options: 'i' };
-    }
-    if (status) {
-      filter.status = status;
-    }
-    if (priority) {
-      filter.priority = priority;
-    }
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 9, 1), 50);
 
-    let query = Task.find(filter).populate('assignedUser', 'name email');
+    // _id is a unique tie-breaker so skip/limit pages never overlap
+    let sortBy = { createdAt: -1, _id: -1 };
+    if (req.query.sort === 'asc') sortBy = { dueDate: 1, createdAt: -1, _id: -1 };
+    else if (req.query.sort === 'desc') sortBy = { dueDate: -1, createdAt: -1, _id: -1 };
 
-    if (sort === 'asc') {
-      query = query.sort({ dueDate: 1 });
-    } else if (sort === 'desc') {
-      query = query.sort({ dueDate: -1 });
-    } else {
-      query = query.sort({ createdAt: -1 });
-    }
+    const [tasks, total] = await Promise.all([
+      Task.find(filter)
+        .populate('assignedUser', 'name email')
+        .sort(sortBy)
+        .skip((page - 1) * limit)
+        .limit(limit),
+      Task.countDocuments(filter),
+    ]);
 
-    const tasks = await query;
-    res.status(200).json(tasks);
+    res.status(200).json({
+      tasks,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(Math.ceil(total / limit), 1),
+      },
+    });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// GET /api/tasks/stats — counts per status (respects search & priority filters)
+exports.getTaskStats = async (req, res) => {
+  try {
+    const { filter, error } = buildFilter(req.query, { includeStatus: false });
+    if (error) return res.status(400).json({ message: error });
+
+    const grouped = await Task.aggregate([
+      { $match: filter },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]);
+
+    const byStatus = Object.fromEntries(grouped.map((g) => [g._id, g.count]));
+    const pending = byStatus.Pending || 0;
+    const inProgress = byStatus['In Progress'] || 0;
+    const completed = byStatus.Completed || 0;
+
+    res.status(200).json({ total: pending + inProgress + completed, pending, inProgress, completed });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }

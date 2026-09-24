@@ -7,7 +7,21 @@ const authRoutes = require('./routes/authRoutes');
 const taskRoutes = require('./routes/taskRoutes');
 
 const app = express();
-app.use(cors({ origin: process.env.CLIENT_URL }));
+// CLIENT_URL can hold several origins separated by commas (e.g. localhost + Vercel)
+const allowedOrigins = (process.env.CLIENT_URL || '')
+  .split(',')
+  .map((o) => o.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow non-browser tools (curl/Postman) and whitelisted origins
+      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(null, false);
+    },
+  })
+);
 app.use(express.json());
 
 app.get('/', (req, res) => res.json({ status: 'API running' }));
