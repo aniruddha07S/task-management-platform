@@ -1,150 +1,145 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import api from '../services/api';
+import Modal from './ui/Modal';
+import Field from './ui/Field';
+import Segmented from './ui/Segmented';
+import Select from './ui/Select';
+import { PRIORITY_OPTIONS, STATUS_OPTIONS } from '../constants/taskMeta';
+
+const toFormState = (task, currentUserId) => ({
+  title: task?.title ?? '',
+  description: task?.description ?? '',
+  priority: task?.priority ?? 'Medium',
+  dueDate: task?.dueDate ? task.dueDate.slice(0, 10) : '',
+  status: task?.status ?? 'Pending',
+  assignedUser: task?.assignedUser?._id ?? task?.assignedUser ?? currentUserId ?? '',
+});
+
+const validate = (d) => {
+  const e = {};
+  if (!d.title.trim()) e.title = 'Title is required';
+  else if (d.title.trim().length > 100) e.title = 'Keep the title under 100 characters';
+  if (!d.dueDate) e.dueDate = 'Pick a due date';
+  if (!d.assignedUser) e.assignedUser = 'Assign this task to someone';
+  return e;
+};
 
 const TaskForm = ({ task, onSubmit, onClose }) => {
-  const currentUser = useSelector((state) => state.auth.user);
+  const currentUserId = useSelector((state) => state.auth.user?.id);
+  const [formData, setFormData] = useState(() => toFormState(task, currentUserId));
+  const [errors, setErrors] = useState({});
   const [users, setUsers] = useState([]);
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    priority: 'Medium',
-    dueDate: '',
-    status: 'Pending',
-    assignedUser: currentUser?.id || '',
-  });
-  const [error, setError] = useState('');
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     api
       .get('/api/auth/users')
-      .then((res) => setUsers(res.data))
-      .catch(() => setUsers([]));
+      .then((res) => !cancelled && setUsers(res.data))
+      .catch(() => !cancelled && setUsers([]))
+      .finally(() => !cancelled && setUsersLoading(false));
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  useEffect(() => {
-    if (task) {
-      setFormData({
-        title: task.title || '',
-        description: task.description || '',
-        priority: task.priority || 'Medium',
-        dueDate: task.dueDate ? task.dueDate.slice(0, 10) : '',
-        status: task.status || 'Pending',
-        assignedUser: task.assignedUser?._id || task.assignedUser || '',
-      });
-    }
-  }, [task]);
-
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  const setField = (name, value) => {
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    if (errors[name]) setErrors((prev) => ({ ...prev, [name]: undefined }));
   };
 
-  const handleSubmit = (e) => {
+  const handleChange = (e) => setField(e.target.name, e.target.value);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.title.trim()) {
-      setError('Title is required');
+    const found = validate(formData);
+    if (Object.keys(found).length) {
+      setErrors(found);
       return;
     }
-    if (!formData.dueDate) {
-      setError('Due date is required');
-      return;
-    }
-    if (!formData.assignedUser) {
-      setError('Please assign the task to a user');
-      return;
-    }
-    setError('');
-    onSubmit(formData);
+    setSubmitting(true);
+    await onSubmit({
+      ...formData,
+      title: formData.title.trim(),
+      description: formData.description.trim(),
+    });
+    setSubmitting(false);
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
-        <h2 className="text-xl font-semibold mb-4">
-          {task ? 'Edit Task' : 'Create Task'}
-        </h2>
-
-        {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
-
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+    <Modal
+      title={task ? 'Edit Task' : 'New Task'}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" form="task-form" className="btn-primary min-w-[110px]" disabled={submitting}>
+            {submitting ? 'Saving…' : task ? 'Save Changes' : 'Create Task'}
+          </button>
+        </>
+      }
+    >
+      <form id="task-form" onSubmit={handleSubmit} noValidate className="space-y-4">
+        <Field label="Title" htmlFor="title" error={errors.title}>
           <input
-            type="text"
+            id="title"
             name="title"
-            placeholder="Title"
+            autoFocus
             value={formData.title}
             onChange={handleChange}
-            className="border rounded px-3 py-2 outline-none focus:ring-2 focus:ring-blue-400"
+            placeholder="What needs to be done?"
+            className="field !py-2.5 !text-[15px] font-medium"
           />
+        </Field>
+
+        <Field label="Notes" htmlFor="description">
           <textarea
+            id="description"
             name="description"
-            placeholder="Description"
+            rows={3}
             value={formData.description}
             onChange={handleChange}
-            rows={3}
-            className="border rounded px-3 py-2 outline-none focus:ring-2 focus:ring-blue-400"
+            placeholder="Add details (optional)"
+            className="field resize-none"
           />
-          <div className="flex gap-3">
-            <select
-              name="priority"
-              value={formData.priority}
-              onChange={handleChange}
-              className="flex-1 border rounded px-3 py-2"
-            >
-              <option value="Low">Low</option>
-              <option value="Medium">Medium</option>
-              <option value="High">High</option>
-            </select>
-            <select
-              name="status"
-              value={formData.status}
-              onChange={handleChange}
-              className="flex-1 border rounded px-3 py-2"
-            >
-              <option value="Pending">Pending</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Completed">Completed</option>
-            </select>
-          </div>
-          <input
-            type="date"
-            name="dueDate"
-            value={formData.dueDate}
-            onChange={handleChange}
-            className="border rounded px-3 py-2 outline-none focus:ring-2 focus:ring-blue-400"
-          />
-          <select
-            name="assignedUser"
-            value={formData.assignedUser}
-            onChange={handleChange}
-            className="border rounded px-3 py-2"
-          >
-            <option value="">Assign to...</option>
-            {users.map((u) => (
-              <option key={u._id} value={u._id}>
-                {u.name} ({u.email})
-              </option>
-            ))}
-          </select>
+        </Field>
 
-          <div className="flex gap-2 mt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 border py-2 rounded hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="flex-1 bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
-            >
-              {task ? 'Save Changes' : 'Create Task'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Due date" htmlFor="dueDate" error={errors.dueDate}>
+            <input id="dueDate" type="date" name="dueDate" value={formData.dueDate} onChange={handleChange} className="field" />
+          </Field>
+          <Field label="Assign to" htmlFor="assignedUser" error={errors.assignedUser}>
+            <Select id="assignedUser" name="assignedUser" value={formData.assignedUser} onChange={handleChange}>
+              {usersLoading ? (
+                <option value={formData.assignedUser}>Loading people…</option>
+              ) : (
+                <>
+                  <option value="">Choose a person…</option>
+                  {users.map((u) => (
+                    <option key={u._id} value={u._id}>
+                      {u.name} ({u.email})
+                    </option>
+                  ))}
+                </>
+              )}
+            </Select>
+          </Field>
+        </div>
+
+        <Field label="Priority">
+          <Segmented full ariaLabel="Priority" options={PRIORITY_OPTIONS} value={formData.priority} onChange={(v) => setField('priority', v)} />
+        </Field>
+
+        <Field label="Status">
+          <Segmented full ariaLabel="Status" options={STATUS_OPTIONS} value={formData.status} onChange={(v) => setField('status', v)} />
+        </Field>
+      </form>
+    </Modal>
   );
 };
 
-export default TaskForm;    
+export default TaskForm;

@@ -1,23 +1,39 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, Link } from 'react-router-dom';
-import { loginUser } from '../store/authSlice';
+import { loginUser, clearAuthError } from '../store/authSlice';
+import AuthLayout from '../components/AuthLayout';
+import FormAlert from '../components/FormAlert';
+import Field from '../components/ui/Field';
+
+const DEMO_ACCOUNTS = [
+  { label: 'User', email: 'testuser@example.com', password: 'Test@1234' },
+  { label: 'Admin', email: 'admin@example.com', password: 'Admin@1234' },
+];
+
+const EMAIL_RE = /^\S+@\S+\.\S+$/;
 
 const Login = () => {
   const [formData, setFormData] = useState({ email: '', password: '' });
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [validationError, setValidationError] = useState('');
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { status, error } = useSelector((state) => state.auth);
 
+  useEffect(() => {
+    dispatch(clearAuthError());
+  }, [dispatch]);
+
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+    setValidationError('');
   };
 
   const validate = () => {
     if (!formData.email.trim()) return 'Email is required';
-    if (!formData.password.trim()) return 'Password is required';
+    if (!EMAIL_RE.test(formData.email)) return 'Enter a valid email address';
+    if (!formData.password) return 'Password is required';
     return '';
   };
 
@@ -28,67 +44,61 @@ const Login = () => {
       setValidationError(err);
       return;
     }
-    setValidationError('');
     const result = await dispatch(loginUser({ ...formData, rememberMe }));
-    if (loginUser.fulfilled.match(result)) {
-      navigate('/dashboard');
-    }
+    if (loginUser.fulfilled.match(result)) navigate('/dashboard');
   };
 
+  const loading = status === 'loading';
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white p-8 rounded-lg shadow-md w-full max-w-sm"
-      >
-        <h1 className="text-2xl font-semibold mb-6 text-center">Login</h1>
+    <AuthLayout title="Welcome back" subtitle="Sign in to your Taskflow workspace">
+      <form onSubmit={handleSubmit} noValidate className="space-y-3.5">
+        <FormAlert message={validationError || error} />
 
-        {(validationError || error) && (
-          <p className="text-red-500 text-sm mb-4">{validationError || error}</p>
-        )}
+        <Field label="Email" htmlFor="email">
+          <input id="email" type="email" name="email" autoComplete="email" placeholder="you@example.com" value={formData.email} onChange={handleChange} className="field" />
+        </Field>
 
-        <input
-          type="email"
-          name="email"
-          placeholder="Email"
-          value={formData.email}
-          onChange={handleChange}
-          className="w-full border rounded px-3 py-2 mb-3 outline-none focus:ring-2 focus:ring-blue-400"
-        />
-        <input
-          type="password"
-          name="password"
-          placeholder="Password"
-          value={formData.password}
-          onChange={handleChange}
-          className="w-full border rounded px-3 py-2 mb-3 outline-none focus:ring-2 focus:ring-blue-400"
-        />
+        <Field label="Password" htmlFor="password">
+          <input id="password" type="password" name="password" autoComplete="current-password" placeholder="••••••••" value={formData.password} onChange={handleChange} className="field" />
+        </Field>
 
-        <label className="flex items-center gap-2 text-sm mb-4">
-          <input
-            type="checkbox"
-            checked={rememberMe}
-            onChange={(e) => setRememberMe(e.target.checked)}
-          />
-          Remember Me
+        <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink-2 select-none">
+          <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="h-3.5 w-3.5 accent-accent" />
+          Keep me signed in
         </label>
 
-        <button
-          type="submit"
-          disabled={status === 'loading'}
-          className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:opacity-50"
-        >
-          {status === 'loading' ? 'Logging in...' : 'Login'}
+        <button type="submit" disabled={loading} className="btn-primary h-9 w-full">
+          {loading ? 'Signing in…' : 'Sign In'}
         </button>
-
-        <p className="text-sm text-center mt-4">
-          Don't have an account?{' '}
-          <Link to="/register" className="text-blue-600 hover:underline">
-            Register
-          </Link>
-        </p>
       </form>
-    </div>
+
+      <div className="mt-5 rounded-xl bg-fill px-3 py-2.5">
+        <p className="text-[11px] font-semibold text-ink-2">Demo accounts</p>
+        <div className="mt-1.5 flex gap-2">
+          {DEMO_ACCOUNTS.map((a) => (
+            <button
+              key={a.label}
+              type="button"
+              onClick={() => {
+                setFormData({ email: a.email, password: a.password });
+                setValidationError('');
+              }}
+              className="flex-1 rounded-md bg-surface px-2 py-1.5 text-[12px] font-medium text-ink shadow-sm transition hover:text-accent"
+            >
+              Use {a.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <p className="mt-5 text-center text-[13px] text-ink-2">
+        Don’t have an account?{' '}
+        <Link to="/register" className="font-medium text-accent hover:underline">
+          Create one
+        </Link>
+      </p>
+    </AuthLayout>
   );
 };
 

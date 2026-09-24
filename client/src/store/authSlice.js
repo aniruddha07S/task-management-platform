@@ -1,12 +1,10 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '../services/api';
-
-const storedUser = localStorage.getItem('user');
-const storedToken = localStorage.getItem('token');
+import { getToken, getUser, saveAuth, clearAuth } from '../utils/authStorage';
 
 const initialState = {
-  user: storedUser ? JSON.parse(storedUser) : null,
-  token: storedToken || null,
+  user: getUser(),
+  token: getToken(),
   status: 'idle', // idle | loading | succeeded | failed
   error: null,
 };
@@ -35,6 +33,16 @@ export const loginUser = createAsyncThunk(
   }
 );
 
+const setPending = (state) => {
+  state.status = 'loading';
+  state.error = null;
+};
+
+const setRejected = (state, action) => {
+  state.status = 'failed';
+  state.error = action.payload;
+};
+
 const authSlice = createSlice({
   name: 'auth',
   initialState,
@@ -42,44 +50,34 @@ const authSlice = createSlice({
     logout: (state) => {
       state.user = null;
       state.token = null;
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      state.status = 'idle';
+      clearAuth();
+    },
+    clearAuthError: (state) => {
+      state.error = null;
+      state.status = 'idle';
     },
   },
   extraReducers: (builder) => {
     builder
-      .addCase(registerUser.pending, (state) => {
-        state.status = 'loading';
-        state.error = null;
-      })
+      .addCase(registerUser.pending, setPending)
       .addCase(registerUser.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.user = action.payload.user;
         state.token = action.payload.token;
-        localStorage.setItem('token', action.payload.token);
-        localStorage.setItem('user', JSON.stringify(action.payload.user));
+        saveAuth(action.payload, true);
       })
-      .addCase(registerUser.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload;
-      })
-      .addCase(loginUser.pending, (state) => {
-        state.status = 'loading';
-        state.error = null;
-      })
+      .addCase(registerUser.rejected, setRejected)
+      .addCase(loginUser.pending, setPending)
       .addCase(loginUser.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.user = action.payload.user;
         state.token = action.payload.token;
-        localStorage.setItem('token', action.payload.token);
-        localStorage.setItem('user', JSON.stringify(action.payload.user));
+        saveAuth(action.payload, Boolean(action.meta.arg?.rememberMe));
       })
-      .addCase(loginUser.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload;
-      });
+      .addCase(loginUser.rejected, setRejected);
   },
 });
 
-export const { logout } = authSlice.actions;
+export const { logout, clearAuthError } = authSlice.actions;
 export default authSlice.reducer;
