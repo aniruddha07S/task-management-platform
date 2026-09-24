@@ -2,12 +2,13 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import toast from 'react-hot-toast';
 import { logout } from '../store/authSlice';
-import { fetchTasks, createTask, updateTask, deleteTask, setFilters } from '../store/tasksSlice';
+import { fetchTasks, fetchStats, createTask, updateTask, deleteTask, setFilters } from '../store/tasksSlice';
 import Sidebar from '../components/Sidebar';
 import StatCard from '../components/StatCard';
 import TaskCard from '../components/TaskCard';
 import TaskForm from '../components/TaskForm';
 import TaskDetail from '../components/TaskDetail';
+import Pagination from '../components/Pagination';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import Segmented from '../components/ui/Segmented';
 import Select from '../components/ui/Select';
@@ -32,7 +33,7 @@ const SkeletonCard = () => (
 
 const Dashboard = () => {
   const { user } = useSelector((state) => state.auth);
-  const { items: tasks, status, error, filters } = useSelector((state) => state.tasks);
+  const { items: tasks, status, error, filters, pagination, stats } = useSelector((state) => state.tasks);
   const dispatch = useDispatch();
 
   const [searchInput, setSearchInput] = useState(filters.search);
@@ -48,32 +49,41 @@ const Dashboard = () => {
     dispatch(setFilters({ search: debouncedSearch }));
   }, [debouncedSearch, dispatch]);
 
-  // Server-side search / priority / sort. Status is filtered client-side so the
-  // sidebar counts and stat tiles always reflect every status.
-  const { search, priority, sort } = filters;
+  // Everything is filtered, sorted and paginated on the server.
+  const { search, priority, sort, status: statusFilter, page } = filters;
+
   const loadTasks = useCallback(
-    () => dispatch(fetchTasks({ search, priority, sort })),
-    [dispatch, search, priority, sort]
+    () => dispatch(fetchTasks({ search, priority, sort, status: statusFilter, page })),
+    [dispatch, search, priority, sort, statusFilter, page]
+  );
+
+  // Stats ignore the status filter so every sidebar count / tile stays accurate
+  const loadStats = useCallback(
+    () => dispatch(fetchStats({ search, priority })),
+    [dispatch, search, priority]
   );
 
   useEffect(() => {
     loadTasks();
   }, [loadTasks]);
 
-  const stats = useMemo(
-    () => ({
-      total: tasks.length,
-      pending: tasks.filter((t) => t.status === 'Pending').length,
-      inProgress: tasks.filter((t) => t.status === 'In Progress').length,
-      completed: tasks.filter((t) => t.status === 'Completed').length,
-    }),
-    [tasks]
-  );
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
 
-  const visibleTasks = useMemo(
-    () => (filters.status ? tasks.filter((t) => t.status === filters.status) : tasks),
-    [tasks, filters.status]
-  );
+  // If the current page became empty (e.g. last task on it deleted), step back
+  useEffect(() => {
+    if (status === 'succeeded' && tasks.length === 0 && page > pagination.totalPages) {
+      dispatch(setFilters({ page: pagination.totalPages }));
+    }
+  }, [status, tasks.length, page, pagination.totalPages, dispatch]);
+
+  const refresh = useCallback(() => {
+    loadTasks();
+    loadStats();
+  }, [loadTasks, loadStats]);
+
+  const visibleTasks = tasks;
 
   const viewingTask = useMemo(() => tasks.find((t) => t._id === viewingId) ?? null, [tasks, viewingId]);
   const activeList = TASK_LISTS.find((l) => l.key === filters.status) ?? TASK_LISTS[0];
@@ -89,6 +99,14 @@ const Dashboard = () => {
   );
 
   const setPriority = useCallback((value) => dispatch(setFilters({ priority: value })), [dispatch]);
+
+  const goToPage = useCallback(
+    (p) => {
+      dispatch(setFilters({ page: p }));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [dispatch]
+  );
 
   const clearFilters = useCallback(() => {
     setSearchInput('');
@@ -115,10 +133,11 @@ const Dashboard = () => {
     try {
       await dispatch(deleteTask(id)).unwrap();
       toast.success('Task deleted');
+      refresh();
     } catch (msg) {
       toast.error(msg || 'Failed to delete task');
     }
-  }, [deletingId, dispatch]);
+  }, [deletingId, dispatch, refresh]);
 
   const toggleComplete = useCallback(
     async (task) => {
@@ -126,11 +145,12 @@ const Dashboard = () => {
       try {
         await dispatch(updateTask({ id: task._id, taskData: { status: next } })).unwrap();
         toast.success(next === 'Completed' ? 'Marked as completed' : 'Moved back to pending');
+        refresh();
       } catch (msg) {
         toast.error(msg || 'Failed to update task');
       }
     },
-    [dispatch]
+    [dispatch, refresh]
   );
 
   const handleFormSubmit = useCallback(
@@ -144,11 +164,12 @@ const Dashboard = () => {
           toast.success('Task created');
         }
         closeForm();
+        refresh();
       } catch (msg) {
         toast.error(msg || 'Something went wrong');
       }
     },
-    [dispatch, form.task, closeForm]
+    [dispatch, form.task, closeForm, refresh]
   );
 
   const handleLogout = useCallback(() => {
@@ -195,7 +216,7 @@ const Dashboard = () => {
             <div className="min-w-0">
               <h1 className="truncate text-[15px] font-semibold">{activeList.label}</h1>
               <p className="text-[11px] text-ink-2">
-                {visibleTasks.length} {visibleTasks.length === 1 ? 'task' : 'tasks'}
+                {pagination.total} {pagination.total === 1 ? 'task' : 'tasks'}
               </p>
             </div>
             <div className="ml-auto flex items-center gap-2">
@@ -305,6 +326,16 @@ const Dashboard = () => {
                 />
               ))}
             </div>
+          )}
+
+          {status !== 'failed' && (
+            <Pagination
+              page={pagination.page}
+              totalPages={pagination.totalPages}
+              total={pagination.total}
+              limit={pagination.limit}
+              onPageChange={goToPage}
+            />
           )}
         </div>
       </main>
